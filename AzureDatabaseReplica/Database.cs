@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.Options;
-using System.Diagnostics;
 using System.IO;
 
 namespace AzureDatabaseReplica
@@ -27,44 +26,36 @@ namespace AzureDatabaseReplica
         }
         public void Export()
         {
-            string arguments = 
-                $"/a:Export " +
-                $"/ssn:{options.Source.Server} " +
-                $"/sdn:{options.Source.Database} " +
-                $"/su:{options.Source.Username} " +
-                $"/sp:{options.Source.Password} " +
-                $"/tf:{options.Source.Bacpac}";
-
-            Directory.CreateDirectory(localPath);
-            Process.Start(options.SqlPackage, arguments).WaitForExit();
+            BacpacOperations.Export(
+                options.SqlPackage,
+                options.Source.Server,
+                options.Source.Database,
+                options.Source.Username,
+                options.Source.Password,
+                options.Source.Bacpac);
         }
 
         public void Import()
         {
-            string arguments = $"/a:Import " +
-                 $"/sf:{options.Source.Bacpac} " +
-                 $"/tsn:{options.Destination.Server} " +
-                 $"/tdn:{temporaryDatabase} " +
-                 $"/tu:{options.Destination.Username} " +
-                 $"/tp:{options.Destination.Password}";
-
-            Process.Start(options.SqlPackage, arguments).WaitForExit();
+            BacpacOperations.Import(
+                options.SqlPackage,
+                options.Source.Bacpac,
+                options.Destination.Server,
+                temporaryDatabase,
+                options.Destination.Username,
+                options.Destination.Password);
         }
 
         public void Rename()
         {
-            string drop = $"drop database if exists [{options.Destination.Database}]; ";
-            string alter = $"alter database [{temporaryDatabase}] modify name=[{options.Destination.Database}];";
-            string arguments = $"-S {options.Destination.Server} -Q \"{drop} {alter}\"";
-            Process.Start("sqlcmd", arguments).WaitForExit();
+            SqlOperations.DropDatabase(options.Destination.Server, options.Destination.Database);
+            SqlOperations.RenameDatabase(options.Destination.Server, temporaryDatabase, options.Destination.Database);
         }
 
         public void Backup()
         {
             string path = $"{localPath}\\{temporaryDatabase}.bak";
-            string backup = $"backup database [{options.Destination.Database}] to disk = '{path}' with copy_only";
-            string arguments = $"-S {options.Destination.Server} -Q \"{backup}\"";
-            Process.Start("sqlcmd", arguments).WaitForExit();
+            SqlOperations.Backup(path, options.Destination.Server, options.Destination.Database);
         }
 
         public void Restore(string databaseName)
@@ -72,14 +63,7 @@ namespace AzureDatabaseReplica
             string bakPath = $"{localPath}\\{temporaryDatabase}.bak";
             string mdfPath = $"{localPath}\\{databaseName}.mdf";
             string ldfPath = $"{localPath}\\{databaseName}.ldf";
-            string log = $"{temporaryDatabase}_log";
-
-            string restore = $"restore database [{databaseName}] " +
-                $"from disk = '{bakPath}' with move '{temporaryDatabase}' " +
-                $"to '{mdfPath}', move '{log}' to '{ldfPath}', replace, recovery";
-
-            string arguments = $"-S {options.Destination.Server} -Q \"{restore}\"";
-            Process.Start("sqlcmd", arguments).WaitForExit();
+            SqlOperations.Restore(options.Destination.Server, bakPath, mdfPath, ldfPath, databaseName, temporaryDatabase);
         }
 
         private string GetLocalPath(string filePath)
